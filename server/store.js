@@ -12,7 +12,10 @@ const DEFAULTS = {
   settings: {
     pollIntervalMs: 5000,
     discordWebhook: '',       // 空ならサーバー側通知は無効
+    lolOnly: true,            // LoL でオンラインのときだけ通知する
+                              // （Riot クライアントのみ / VALORANT などは無視）
     notifyAwayAsOnline: true, // away / dnd もオンライン扱いにする
+                              // （false でもゲーム中は常に通知する）
     soundEnabled: true,
     quietMinutes: 10,         // 同一プレイヤーへの再通知を抑制する分数
   },
@@ -82,6 +85,7 @@ class Store {
       if (Number.isFinite(v)) s.pollIntervalMs = Math.min(60000, Math.max(2000, Math.round(v)));
     }
     if (patch.discordWebhook !== undefined) s.discordWebhook = String(patch.discordWebhook || '').trim();
+    if (patch.lolOnly !== undefined) s.lolOnly = !!patch.lolOnly;
     if (patch.notifyAwayAsOnline !== undefined) s.notifyAwayAsOnline = !!patch.notifyAwayAsOnline;
     if (patch.soundEnabled !== undefined) s.soundEnabled = !!patch.soundEnabled;
     if (patch.quietMinutes !== undefined) {

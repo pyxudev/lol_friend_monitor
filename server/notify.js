@@ -21,16 +21,33 @@ function postDiscord(webhookUrl, alert) {
       mobile: 'モバイル',
     }[alert.availability] || alert.availability;
 
+    const gameLabel = {
+      outOfGame: 'ロビー',
+      inQueue: 'キュー中',
+      championSelect: 'チャンピオン選択',
+      inGame: 'ゲーム中',
+      spectating: '観戦中',
+      hosting_Custom: 'カスタム作成中',
+      hosting_Practicetool: '練習ツール',
+    }[alert.gameStatus] || alert.gameStatus || '';
+
+    const where = alert.lolOnline === false && alert.productLabel
+      ? alert.productLabel
+      : 'LoL';
+    const title = alert.inGame
+      ? `${alert.displayName} が ${where} でゲーム中です`
+      : `${alert.displayName} が ${where} でオンラインになりました`;
+
     const payload = JSON.stringify({
       username: 'LoL Friend Watcher',
       embeds: [{
-        title: `${alert.displayName} がオンラインになりました`,
+        title,
         description: [
           `状態: **${statusLabel}**`,
-          alert.gameStatus ? `ゲーム: ${alert.gameStatus}` : null,
+          gameLabel ? `ゲーム: ${gameLabel}` : null,
           alert.statusMessage ? `ステータス: ${alert.statusMessage}` : null,
         ].filter(Boolean).join('\n'),
-        color: 0x3b82f6,
+        color: alert.inGame ? 0xef4444 : 0x3b82f6,
         timestamp: new Date(alert.at).toISOString(),
       }],
     });

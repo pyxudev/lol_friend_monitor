@@ -36,6 +36,7 @@
     <div class="filters" id="filters">
       <button class="chip chip-on" data-filter="all">すべて</button>
       <button class="chip" data-filter="online">オンライン</button>
+      <button class="chip" data-filter="lol">LoL</button>
       <button class="chip" data-filter="ingame">ゲーム中</button>
       <button class="chip" data-filter="watched">監視中</button>
     </div>
@@ -50,7 +51,7 @@
         <h2>監視中 <span id="count-watched" class="badge">0</span></h2>
       </div>
       <div id="watched" class="list list-compact"></div>
-      <p id="watched-empty" class="empty">フレンド一覧の ☆ を押すと、そのプレイヤーがオンラインになったときに通知します。</p>
+      <p id="watched-empty" class="empty">フレンド一覧の ☆ を押すと、そのプレイヤーが LoL でオンラインになったときに通知します。</p>
       <div class="manual-add">
         <input id="manual-name" type="text" placeholder="名前#タグ を直接登録（オフライン時用）" autocomplete="off">
         <button id="btn-manual-add" class="btn btn-sm">追加</button>
@@ -85,9 +86,16 @@
     </label>
 
     <label class="field-check">
+      <input id="set-lolonly" type="checkbox">
+      <span>LoL でオンラインのときだけ通知する</span>
+    </label>
+    <small class="field-note">Riot クライアントだけ起動している場合や、VALORANT など他タイトルでのオンラインでは通知しません。</small>
+
+    <label class="field-check">
       <input id="set-away" type="checkbox">
       <span>離席中・取り込み中もオンラインとして通知する</span>
     </label>
+    <small class="field-note">オフにしてもキュー中・チャンピオン選択・ゲーム中は必ず通知します。</small>
 
     <label class="field-check">
       <input id="set-sound" type="checkbox">

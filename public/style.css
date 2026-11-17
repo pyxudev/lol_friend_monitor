@@ -160,6 +160,7 @@ body {
 .row-sub .st { color: var(--teal); }
 .row-sub .st-ingame { color: var(--red); }
 .row-sub .st-queue { color: var(--amber); }
+.row-sub .st-other { color: #7b8aa3; }
 
 .star {
   flex: none; font-size: 18px; line-height: 1; cursor: pointer;
@@ -217,3 +218,12 @@ dialog::backdrop { background: rgba(0, 0, 0, .6); }
 .toast-sub { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
 @keyframes slide-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
 .toast.out { opacity: 0; transform: translateX(24px); transition: .3s; }
+
+/* 設定ダイアログのチェックボックス補足 */
+.dlg .field-note {
+  display: block;
+  margin: -6px 0 10px 26px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #7b8aa3;
+}

@@ -3,7 +3,9 @@
  * LoL Friend Watcher — ローカルサーバー
  *
  *  - League クライアントのローカル API を定期ポーリングしてフレンドの状態を取得
- *  - 監視登録したプレイヤーが offline → online に変化したらアラートを発火
+ *  - 監視登録したプレイヤーが「LoL でオンライン」になったらアラートを発火
+ *    （Riot クライアントのみ / VALORANT などの在席では通知しない）
+ *  - ポーリング間隔の間に offline → ゲーム中まで進んだ場合も取りこぼさない
  *  - ブラウザへは SSE でリアルタイム配信（デスクトップ通知＋音）
  *  - Discord Webhook を設定すればブラウザを閉じていても通知が届く
  */
@@ -35,17 +37,77 @@ const state = {
   alerts: [],        // 直近のアラート（新しい順、最大 50 件）
 };
 
-/** key -> { availability, online, lastNotifiedAt } */
+/**
+ * key -> {
+ *   availability, present, inGame,
+ *   pending,        // 在席になったが通知条件を満たしていない（離席中など）
+ *   lastNotifiedAt
+ * }
+ */
 const prevStatus = new Map();
 let baselineReady = false;   // 起動直後の 1 回目はアラートを出さない
+let lastSuccessAt = 0;       // 最後にポーリングが成功した時刻（復帰判定用）
 
+/** チャット上「在席」とみなす availability */
 const ONLINE_STATES = new Set(['chat', 'away', 'dnd', 'mobile']);
 
+/**
+ * LoL クライアント上の在席とみなす availability。
+ * mobile は Riot モバイルアプリなので LoL 起動中ではない。
+ */
+const LOL_STATES = new Set(['chat', 'away', 'dnd']);
+
+/** LCU の productId が LoL を指す値 */
+const LOL_PRODUCTS = new Set(['league_of_legends', 'leagueoflegends', 'lol']);
+
+const PRODUCT_LABEL = {
+  league_of_legends: 'League of Legends',
+  valorant: 'VALORANT',
+  bacon: 'Legends of Runeterra',
+  wildrift: 'ワイルドリフト',
+  riot: 'Riot クライアント',
+  '2xko': '2XKO',
+};
+
+/** ゲームに入っている（＝確実に LoL を起動している）と言える gameStatus */
+const IN_GAME_STATES = new Set(['inqueue', 'championselect', 'ingame', 'spectating']);
+
+function isInGameStatus(gameStatus) {
+  const s = String(gameStatus || '').toLowerCase();
+  if (!s) return false;
+  return IN_GAME_STATES.has(s) || s.startsWith('hosting_');
+}
+
+/** チャット上オンラインかどうか（製品を問わない。表示用） */
 function isOnline(availability) {
-  if (!availability) return false;
-  if (!ONLINE_STATES.has(availability)) return false;
-  if (!store.settings.notifyAwayAsOnline && availability !== 'chat') return false;
-  return true;
+  return ONLINE_STATES.has(availability || 'offline');
+}
+
+/**
+ * LoL クライアントでオンラインかどうか。
+ * productId が取れるクライアントではそれを信頼し、
+ * 取れない場合は LoL 固有の gameStatus があるかで判定する。
+ */
+function isLolOnline(availability, productId, gameStatus) {
+  if (!LOL_STATES.has(availability)) return false;
+  if (productId) return LOL_PRODUCTS.has(productId);
+  return !!gameStatus;
+}
+
+/** 通知対象の「在席」判定。lolOnly が false なら製品を問わない */
+function isPresentForNotify(f) {
+  return store.settings.lolOnly ? f.lolOnline : f.online;
+}
+
+/**
+ * 今この瞬間に通知してよい状態か。
+ * ゲーム中（キュー／チャンピオン選択／試合中）は設定にかかわらず常に通知する。
+ */
+function isNotifiableNow(f) {
+  if (!isPresentForNotify(f)) return false;
+  if (f.inGame) return true;
+  if (f.availability === 'chat') return true;
+  return !!store.settings.notifyAwayAsOnline;
 }
 
 /** LCU のフレンドオブジェクトを UI 用に整形する */
@@ -54,17 +116,26 @@ function normalize(f) {
   const tagLine = f.tagLine || f.gameTag || '';
   const key = f.puuid || f.pid || `${gameName}#${tagLine}`.toLowerCase();
   const lol = f.lol || {};
+  const availability = f.availability || 'offline';
+  const productId = String(f.productId || f.product || '').trim().toLowerCase();
+  const gameStatus = lol.gameStatus || '';
+  const online = isOnline(availability);
+  const lolOnline = isLolOnline(availability, productId, gameStatus);
   return {
     key,
     displayName: tagLine ? `${gameName}#${tagLine}` : gameName,
     gameName,
     tagLine,
     icon: f.icon || 0,
-    availability: f.availability || 'offline',
-    online: isOnline(f.availability),
+    availability,
+    online,
+    lolOnline,
+    productId,
+    productLabel: PRODUCT_LABEL[productId] || productId || '',
     statusMessage: f.statusMessage || '',
     groupName: f.groupName || f.displayGroupName || '',
-    gameStatus: lol.gameStatus || '',
+    gameStatus,
+    inGame: lolOnline && isInGameStatus(gameStatus),
     gameQueueType: lol.gameQueueType || '',
     level: Number(lol.level || f.summonerLevel || 0),
     note: f.note || '',
@@ -102,14 +173,15 @@ async function poll() {
   try {
     const raw = await source.getFriends();
     const friends = raw.map(normalize).sort((a, b) => {
+      // LoL でオンライン → 他タイトルでオンライン → オフライン の順
+      if (a.lolOnline !== b.lolOnline) return a.lolOnline ? -1 : 1;
       if (a.online !== b.online) return a.online ? -1 : 1;
       return a.displayName.localeCompare(b.displayName, 'ja');
     });
 
     if (!state.connected) {
-      // 再接続時は誤爆防止のためベースラインを取り直す
-      baselineReady = false;
       state.me = await safeMe();
+      resumeBaseline();
     }
     state.connected = true;
     state.lastError = null;
@@ -118,6 +190,7 @@ async function poll() {
 
     detectTransitions(friends);
     baselineReady = true;
+    lastSuccessAt = Date.now();
 
     broadcast('state', publicState());
   } catch (err) {
@@ -128,10 +201,47 @@ async function poll() {
       state.connected = false;
       state.lastError = msg;
       state.friends = [];
-      prevStatus.clear();
+      // prevStatus はここでは消さない。短い切断なら復帰時に
+      // 切断中のオンライン化も検出したいので resumeBaseline() で判断する。
       baselineReady = false;
       broadcast('state', publicState());
     }
+  }
+}
+
+/**
+ * 切断から復帰したときのベースライン処理。
+ *
+ * 短い切断（クライアントの一時的な応答不能など）なら直前の状態を信頼し、
+ * 「切断中に offline → オンライン／ゲーム中になった」ケースも通知する。
+ * 長い切断（クライアント再起動など）は全員が新規オンライン扱いになって
+ * 通知が溢れるため、状態を取り直して 1 回目は通知しない。
+ */
+function resumeBaseline() {
+  const staleMs = Math.max(60000, store.settings.pollIntervalMs * 6);
+  const gap = lastSuccessAt ? Date.now() - lastSuccessAt : Infinity;
+
+  if (prevStatus.size && gap <= staleMs) {
+    baselineReady = true;
+    console.log(`[poll] ${Math.round(gap / 1000)} 秒の切断から復帰（直前の状態を保持して差分を検出します）`);
+  } else {
+    prevStatus.clear();
+    baselineReady = false;
+    if (lastSuccessAt) console.log('[poll] 長時間の切断から復帰したため状態を取り直します（この回は通知しません）');
+  }
+}
+
+/** 設定変更で「在席」の定義が変わったときに、通知せず基準を取り直す */
+function resyncPresence() {
+  for (const f of state.friends) {
+    const prev = prevStatus.get(f.key);
+    prevStatus.set(f.key, {
+      availability: f.availability,
+      present: isPresentForNotify(f),
+      inGame: f.inGame,
+      pending: false,
+      lastNotifiedAt: prev ? prev.lastNotifiedAt : 0,
+    });
   }
 }
 
@@ -149,19 +259,36 @@ function detectTransitions(friends) {
 
   for (const f of friends) {
     const prev = prevStatus.get(f.key);
-    const wasOnline = prev ? prev.online : false;
+    const present = isPresentForNotify(f);
+    const wasPresent = prev ? prev.present : false;
     const lastNotifiedAt = prev ? prev.lastNotifiedAt : 0;
 
     let notified = lastNotifiedAt;
-    const becameOnline = !wasOnline && f.online;
+    // pending: 在席になったが通知条件を満たしていない状態。
+    // 在席が続く間は保持し、ゲーム中などになった時点で通知する。
+    // これにより「離席中で一旦見送った → 次のポーリングでゲーム中」も取りこぼさない。
+    let pending = prev ? !!prev.pending : false;
 
-    if (baselineReady && becameOnline && watchedKeys.has(f.key)) {
-      if (!quietMs || now - lastNotifiedAt > quietMs) {
-        notified = now;
-        fireAlert(f);
+    if (!present) {
+      pending = false;
+    } else if (baselineReady && watchedKeys.has(f.key)) {
+      if (!wasPresent) pending = true;
+      if (pending && isNotifiableNow(f)) {
+        if (!quietMs || now - lastNotifiedAt > quietMs) {
+          notified = now;
+          pending = false;
+          fireAlert(f, !wasPresent);
+        }
       }
     }
-    prevStatus.set(f.key, { availability: f.availability, online: f.online, lastNotifiedAt: notified });
+
+    prevStatus.set(f.key, {
+      availability: f.availability,
+      present,
+      inGame: f.inGame,
+      pending,
+      lastNotifiedAt: notified,
+    });
   }
 
   // リストから消えたフレンド（＝ブロック/削除）は記録も消す
@@ -169,7 +296,7 @@ function detectTransitions(friends) {
   for (const k of prevStatus.keys()) if (!alive.has(k)) prevStatus.delete(k);
 }
 
-function fireAlert(friend) {
+function fireAlert(friend, becamePresent) {
   const alert = {
     id: `${friend.key}-${Date.now()}`,
     key: friend.key,
@@ -177,13 +304,21 @@ function fireAlert(friend) {
     icon: friend.icon,
     availability: friend.availability,
     gameStatus: friend.gameStatus,
+    inGame: friend.inGame,
+    lolOnline: friend.lolOnline,
+    productId: friend.productId,
+    productLabel: friend.productLabel,
     statusMessage: friend.statusMessage,
+    // 'online' = 在席になった瞬間 / 'resumed' = 在席のまま通知条件を満たした
+    reason: becamePresent ? 'online' : 'resumed',
     at: new Date().toISOString(),
   };
   state.alerts.unshift(alert);
   state.alerts = state.alerts.slice(0, 50);
 
-  console.log(`[alert] ${alert.displayName} がオンラインになりました (${alert.availability})`);
+  const where = friend.lolOnline ? 'LoL' : (friend.productLabel || friend.availability);
+  console.log(`[alert] ${alert.displayName} が ${where} で${friend.inGame ? 'ゲーム中です' : 'オンラインになりました'}`
+    + ` (${friend.availability}${friend.gameStatus ? ' / ' + friend.gameStatus : ''})`);
   broadcast('alert', alert);
 
   const hook = store.settings.discordWebhook;
@@ -309,8 +444,11 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/settings' && req.method === 'PUT') {
       const body = await readBody(req);
       const before = store.settings.pollIntervalMs;
+      const beforeLolOnly = store.settings.lolOnly;
       store.updateSettings(body);
       if (store.settings.pollIntervalMs !== before) schedule();
+      // 「在席」の定義が変わると全員が新規オンライン扱いになりかねないので基準を取り直す
+      if (store.settings.lolOnly !== beforeLolOnly) resyncPresence();
       broadcast('state', publicState());
       return sendJson(res, 200, { settings: publicState().settings });
     }
@@ -323,6 +461,11 @@ const server = http.createServer(async (req, res) => {
         icon: 0,
         availability: 'chat',
         gameStatus: 'outOfGame',
+        inGame: false,
+        lolOnline: true,
+        productId: 'league_of_legends',
+        productLabel: 'League of Legends',
+        reason: 'online',
         statusMessage: '通知の動作確認です',
         at: new Date().toISOString(),
       };
@@ -351,6 +494,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`  → http://localhost:${PORT}`);
   console.log(`  モード: ${MOCK ? 'モック（デモデータ）' : 'LCU 接続'}`);
   console.log(`  監視中のプレイヤー: ${store.watched.length} 人`);
+  console.log(`  通知対象: ${store.settings.lolOnly ? 'LoL でオンラインのときだけ' : '製品を問わずオンライン時'}`);
   console.log('');
   schedule();
 });

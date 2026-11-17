@@ -26,6 +26,30 @@ const GAME_LABEL = {
   inGame: 'ゲーム中', hosting_Custom: 'カスタム作成中', hosting_Practicetool: '練習ツール',
   spectating: '観戦中',
 };
+const PRODUCT_LABEL = {
+  league_of_legends: 'League of Legends', valorant: 'VALORANT',
+  bacon: 'Legends of Runeterra', wildrift: 'ワイルドリフト',
+  riot: 'Riot クライアント', '2xko': '2XKO',
+};
+
+/** 一覧で使う状態ラベル */
+function statusLabel(f) {
+  if (!f.online) return 'オフライン';
+  if (f.lolOnline) return GAME_LABEL[f.gameStatus] || AVAIL_LABEL[f.availability] || f.availability;
+  // LoL 以外の在席（通知対象外）は、どこに居るのかを出す
+  const prod = f.productLabel || PRODUCT_LABEL[f.productId] || '他タイトル';
+  return `${prod}（LoL 外）`;
+}
+
+/** アラートの見出し */
+function alertTitle(a) {
+  const where = a.lolOnline === false
+    ? (a.productLabel || PRODUCT_LABEL[a.productId] || '他タイトル')
+    : 'LoL';
+  return a.inGame
+    ? `${a.displayName} が ${where} でゲーム中です`
+    : `${a.displayName} が ${where} でオンラインになりました`;
+}
 
 function iconUrl(id) {
   if (!id) return null;
@@ -87,7 +111,7 @@ function beep() {
 function desktopNotify(alert) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
   try {
-    const n = new Notification(`${alert.displayName} がオンラインです`, {
+    const n = new Notification(alertTitle(alert), {
       body: [AVAIL_LABEL[alert.availability] || alert.availability,
              GAME_LABEL[alert.gameStatus] || '',
              alert.statusMessage].filter(Boolean).join(' · '),
@@ -115,8 +139,9 @@ function toast(title, sub, kind) {
 }
 
 function handleAlert(alert) {
-  toast(`${alert.displayName} がオンラインになりました`,
-        [AVAIL_LABEL[alert.availability], GAME_LABEL[alert.gameStatus]].filter(Boolean).join(' · '));
+  toast(alertTitle(alert),
+        [AVAIL_LABEL[alert.availability], GAME_LABEL[alert.gameStatus]].filter(Boolean).join(' · '),
+        alert.inGame ? '' : 'info');
   desktopNotify(alert);
   beep();
   S.alerts = [alert, ...S.alerts].slice(0, 50);
@@ -154,7 +179,8 @@ function renderConn() {
 function matchFilter(f) {
   if (query && !f.displayName.toLowerCase().includes(query)) return false;
   if (filter === 'online') return f.online;
-  if (filter === 'ingame') return f.gameStatus === 'inGame' || f.gameStatus === 'championSelect';
+  if (filter === 'lol') return f.lolOnline;
+  if (filter === 'ingame') return f.inGame;
   if (filter === 'watched') return isWatched(f.key);
   return true;
 }
@@ -163,7 +189,7 @@ function isWatched(key) { return S.watched.some((w) => w.key === key); }
 
 function renderFriends() {
   const list = S.friends.filter(matchFilter);
-  el.countFriends.textContent = `${S.friends.filter((f) => f.online).length} / ${S.friends.length}`;
+  el.countFriends.textContent = `LoL ${S.friends.filter((f) => f.lolOnline).length} / 全${S.friends.length}`;
   el.friends.textContent = '';
 
   if (!list.length) {
@@ -203,8 +229,10 @@ function friendRow(f) {
   const sub = document.createElement('div');
   sub.className = 'row-sub';
   const st = document.createElement('span');
-  st.className = 'st' + (f.gameStatus === 'inGame' ? ' st-ingame' : (f.gameStatus === 'inQueue' || f.gameStatus === 'championSelect' ? ' st-queue' : ''));
-  st.textContent = f.online ? (GAME_LABEL[f.gameStatus] || AVAIL_LABEL[f.availability] || f.availability) : 'オフライン';
+  st.className = 'st' + (!f.online || !f.lolOnline ? ' st-other'
+    : (f.gameStatus === 'inGame' || f.gameStatus === 'spectating' ? ' st-ingame'
+      : (f.inGame ? ' st-queue' : '')));
+  st.textContent = statusLabel(f);
   sub.appendChild(st);
   const extra = [f.level ? `Lv.${f.level}` : '', f.statusMessage, f.groupName].filter(Boolean).join(' · ');
   if (extra) { const e = document.createElement('span'); e.textContent = ' · ' + extra; sub.appendChild(e); }
@@ -214,7 +242,7 @@ function friendRow(f) {
   const star = document.createElement('button');
   star.className = 'star' + (isWatched(f.key) ? ' on' : '');
   star.textContent = isWatched(f.key) ? '★' : '☆';
-  star.title = isWatched(f.key) ? '監視を解除' : 'オンライン時に通知する';
+  star.title = isWatched(f.key) ? '監視を解除' : 'LoL でオンラインになったら通知する';
   star.onclick = () => toggleWatch(f);
 
   row.append(wrap, main, star);
@@ -248,9 +276,7 @@ function renderWatched() {
     if (w.tag) { const tg = document.createElement('span'); tg.className = 'row-tag'; tg.textContent = `#${w.tag}`; nameLine.appendChild(tg); }
     const sub = document.createElement('div');
     sub.className = 'row-sub';
-    sub.textContent = live
-      ? (live.online ? (GAME_LABEL[live.gameStatus] || AVAIL_LABEL[live.availability]) : 'オフライン')
-      : 'フレンドリストに未確認';
+    sub.textContent = live ? statusLabel(live) : 'フレンドリストに未確認';
     main.append(nameLine, sub);
 
     const del = document.createElement('button');
@@ -273,7 +299,10 @@ function renderAlerts() {
     const row = document.createElement('div');
     row.className = 'alert-row';
     const ic = document.createElement('div'); ic.className = 'alert-icon'; ic.textContent = '✓';
-    const tx = document.createElement('div'); tx.className = 'alert-text'; tx.textContent = `${a.displayName} がオンライン`;
+    const tx = document.createElement('div'); tx.className = 'alert-text';
+    tx.textContent = a.inGame
+      ? `${a.displayName} がゲーム中（${GAME_LABEL[a.gameStatus] || a.gameStatus}）`
+      : `${a.displayName} が LoL でオンライン`;
     const tm = document.createElement('div'); tm.className = 'alert-time'; tm.textContent = timeAgo(a.at);
     row.append(ic, tx, tm);
     frag.appendChild(row);
@@ -307,7 +336,7 @@ async function toggleWatch(f) {
         body: JSON.stringify({ key: f.key, name: f.gameName, tag: f.tagLine }),
       });
       S.watched = r.watched;
-      toast(`${f.displayName} を監視リストに追加しました`, 'オンラインになると通知します', 'info');
+      toast(`${f.displayName} を監視リストに追加しました`, 'LoL でオンラインになると通知します', 'info');
     }
     renderFriends(); renderWatched();
   } catch (e) { toast('操作に失敗しました', e.message, 'err'); }
@@ -340,6 +369,7 @@ async function manualAdd() {
 function openSettings() {
   $('#set-interval').value = Math.round((S.settings.pollIntervalMs || 5000) / 1000);
   $('#set-quiet').value = S.settings.quietMinutes ?? 10;
+  $('#set-lolonly').checked = S.settings.lolOnly !== false;
   $('#set-away').checked = !!S.settings.notifyAwayAsOnline;
   $('#set-sound').checked = !!S.settings.soundEnabled;
   $('#set-webhook').value = '';
@@ -352,6 +382,7 @@ el.dlg.addEventListener('close', async () => {
   const patch = {
     pollIntervalMs: Number($('#set-interval').value) * 1000,
     quietMinutes: Number($('#set-quiet').value),
+    lolOnly: $('#set-lolonly').checked,
     notifyAwayAsOnline: $('#set-away').checked,
     soundEnabled: $('#set-sound').checked,
   };
