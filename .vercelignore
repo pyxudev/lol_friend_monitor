@@ -1,3 +1,4 @@
-agent/
-scripts/
-test/
+# 先頭の / でルート直下だけに限定する（付けないと api/agent/ まで除外される）
+/agent/
+/scripts/
+/test/
