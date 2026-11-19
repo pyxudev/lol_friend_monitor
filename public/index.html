@@ -19,14 +19,32 @@
   <div class="topbar-right">
     <div id="conn" class="conn conn-off"><span class="dot"></span><span id="conn-text">接続確認中…</span></div>
     <button id="btn-perm" class="btn btn-ghost" hidden>通知を許可</button>
-    <button id="btn-refresh" class="btn btn-ghost" title="今すぐ再取得">↻</button>
-    <button id="btn-settings" class="btn btn-ghost">設定</button>
+    <button id="btn-refresh" class="btn btn-ghost" title="今すぐ再取得" hidden>↻</button>
+    <button id="btn-settings" class="btn btn-ghost" hidden>設定</button>
   </div>
 </header>
 
+<!-- ログイン（トークン）画面 -->
+<section id="onboard" class="onboard" hidden>
+  <div class="panel onboard-card">
+    <div class="onboard-body">
+      <h2>はじめる</h2>
+      <p>アカウント（ログイン用のトークン）を作成します。メールアドレスやパスワードは不要です。Riot の ID / パスワードも扱いません。</p>
+      <button id="btn-create" class="btn btn-primary">新しく始める</button>
+      <hr>
+      <h3>別の端末で作成済みの場合</h3>
+      <p>設定画面の「アカウント」に表示されるユーザートークンを貼り付けてください。</p>
+      <div class="manual-add flat">
+        <input id="login-token" type="password" placeholder="lfwu_…" autocomplete="off">
+        <button id="btn-login" class="btn btn-sm">ログイン</button>
+      </div>
+    </div>
+  </div>
+</section>
+
 <div id="banner" class="banner" hidden></div>
 
-<main class="layout">
+<main id="app" class="layout" hidden>
   <!-- 左: フレンド一覧 -->
   <section class="panel">
     <div class="panel-head">
@@ -36,6 +54,7 @@
     <div class="filters" id="filters">
       <button class="chip chip-on" data-filter="all">すべて</button>
       <button class="chip" data-filter="online">オンライン</button>
+      <button class="chip" data-filter="lol">LoL</button>
       <button class="chip" data-filter="ingame">ゲーム中</button>
       <button class="chip" data-filter="watched">監視中</button>
     </div>
@@ -50,7 +69,7 @@
         <h2>監視中 <span id="count-watched" class="badge">0</span></h2>
       </div>
       <div id="watched" class="list list-compact"></div>
-      <p id="watched-empty" class="empty">フレンド一覧の ☆ を押すと、そのプレイヤーがオンラインになったときに通知します。</p>
+      <p id="watched-empty" class="empty">フレンド一覧の ☆ を押すと、そのプレイヤーが LoL でオンラインになったときに通知します。</p>
       <div class="manual-add">
         <input id="manual-name" type="text" placeholder="名前#タグ を直接登録（オフライン時用）" autocomplete="off">
         <button id="btn-manual-add" class="btn btn-sm">追加</button>
@@ -74,7 +93,7 @@
     <h2>設定</h2>
 
     <label class="field">
-      <span>更新間隔（秒）</span>
+      <span>エージェントの更新間隔（秒）</span>
       <input id="set-interval" type="number" min="2" max="60" step="1">
     </label>
 
@@ -85,9 +104,16 @@
     </label>
 
     <label class="field-check">
+      <input id="set-lolonly" type="checkbox">
+      <span>LoL でオンラインのときだけ通知する</span>
+    </label>
+    <small class="field-note">Riot クライアントだけ起動している場合や、VALORANT など他タイトルでのオンラインでは通知しません。</small>
+
+    <label class="field-check">
       <input id="set-away" type="checkbox">
       <span>離席中・取り込み中もオンラインとして通知する</span>
     </label>
+    <small class="field-note">オフにしてもキュー中・チャンピオン選択・ゲーム中は必ず通知します。</small>
 
     <label class="field-check">
       <input id="set-sound" type="checkbox">
@@ -97,8 +123,59 @@
     <label class="field">
       <span>Discord Webhook URL（任意）</span>
       <input id="set-webhook" type="url" placeholder="https://discord.com/api/webhooks/…">
-      <small>設定するとブラウザを閉じていてもサーバーから通知が届きます。</small>
+      <small>設定するとブラウザを閉じていても通知が届きます。</small>
     </label>
+
+    <h3 class="dlg-sec">エージェント（フレンド一覧・オンライン通知）</h3>
+    <small class="sec-note">League クライアントを起動する PC で次のコマンドを実行してください（Node.js 18 以上が必要）。2 回目以降は <code>--server</code> / <code>--token</code> を省略できます。</small>
+    <pre id="agent-cmd" class="code"></pre>
+    <small class="sec-note">npx が使えない場合はリポジトリを clone して実行します。</small>
+    <pre id="agent-cmd-clone" class="code"></pre>
+    <div class="row-actions">
+      <button id="btn-copy-agent" type="button" class="btn btn-sm">コマンドをコピー</button>
+      <button id="btn-rotate-agent" type="button" class="btn btn-sm btn-ghost">トークンを再発行</button>
+    </div>
+
+    <h3 class="dlg-sec">Riot API（エージェント停止中の試合検知）</h3>
+    <label class="field-check">
+      <input id="set-riot" type="checkbox">
+      <span>エージェントが動いていないときは Riot API で試合開始を検知する</span>
+    </label>
+    <small class="field-note" id="riot-note">監視リストの Riot ID が試合を開始したら通知します（約 1 分間隔。ロビー・キュー中は検知できません）。</small>
+    <label class="field">
+      <span>サーバー</span>
+      <select id="set-platform">
+        <option value="jp1">日本 (JP)</option><option value="kr">韓国 (KR)</option>
+        <option value="na1">北米 (NA)</option><option value="euw1">西ヨーロッパ (EUW)</option>
+        <option value="eun1">北東ヨーロッパ (EUNE)</option><option value="oc1">オセアニア (OCE)</option>
+        <option value="br1">ブラジル (BR)</option><option value="la1">ラテンアメリカ北 (LAN)</option>
+        <option value="la2">ラテンアメリカ南 (LAS)</option><option value="tr1">トルコ (TR)</option>
+        <option value="ru">ロシア (RU)</option><option value="me1">中東 (ME)</option>
+        <option value="sg2">シンガポール (SG)</option><option value="tw2">台湾 (TW)</option>
+        <option value="vn2">ベトナム (VN)</option><option value="th2">タイ (TH)</option>
+        <option value="ph2">フィリピン (PH)</option>
+      </select>
+    </label>
+
+    <div class="field">
+      <span>Riot API キー</span>
+      <div class="manual-add flat">
+        <input id="set-riotkey" type="password" placeholder="RGAPI-…" autocomplete="off" spellcheck="false">
+        <button id="btn-clear-riotkey" type="button" class="btn btn-sm btn-ghost" hidden>削除</button>
+      </div>
+      <small><a href="https://developer.riotgames.com/" target="_blank" rel="noopener noreferrer">Riot Developer Portal</a> で発行したキーを入力します。保存時に Riot に問い合わせて有効か確認します。開発用キーは 24 時間で失効するので、Personal API Key の利用をおすすめします。</small>
+    </div>
+
+    <h3 class="dlg-sec">アカウント</h3>
+    <small class="sec-note">別の端末やブラウザでログインするときに使います。他人に教えないでください。</small>
+    <div class="manual-add flat">
+      <input id="user-token" type="password" readonly>
+      <button id="btn-copy-user" type="button" class="btn btn-sm">コピー</button>
+    </div>
+    <div class="row-actions">
+      <button id="btn-logout" type="button" class="btn btn-sm btn-ghost">ログアウト</button>
+      <button id="btn-delete" type="button" class="btn btn-sm btn-danger">アカウントを削除</button>
+    </div>
 
     <div class="dlg-actions">
       <button value="cancel" class="btn btn-ghost">閉じる</button>
