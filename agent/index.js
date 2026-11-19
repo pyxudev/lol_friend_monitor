@@ -119,7 +119,10 @@ async function push(payload) {
   });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 || res.status === 403) {
-    const e = new Error(data.error || `認証に失敗しました (${res.status})`);
+    // このアプリの API は必ず JSON の error を返す。無い場合は手前で弾かれている（Vercel のデプロイ保護など）
+    const e = new Error(data.error || `認証に失敗しました (${res.status})。アプリに届く前に拒否されています。`
+      + 'Vercel の Deployment Protection（Vercel Authentication）が有効な URL の可能性があります。'
+      + '本番ドメインを --server に指定するか、Vercel の Settings → Deployment Protection を見直してください。');
     e.fatal = true;
     throw e;
   }
