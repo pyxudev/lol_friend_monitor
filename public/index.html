@@ -157,6 +157,15 @@
       </select>
     </label>
 
+    <div class="field">
+      <span>Riot API キー</span>
+      <div class="manual-add flat">
+        <input id="set-riotkey" type="password" placeholder="RGAPI-…" autocomplete="off" spellcheck="false">
+        <button id="btn-clear-riotkey" type="button" class="btn btn-sm btn-ghost" hidden>削除</button>
+      </div>
+      <small><a href="https://developer.riotgames.com/" target="_blank" rel="noopener noreferrer">Riot Developer Portal</a> で発行したキーを入力します。保存時に Riot に問い合わせて有効か確認します。開発用キーは 24 時間で失効するので、Personal API Key の利用をおすすめします。</small>
+    </div>
+
     <h3 class="dlg-sec">アカウント</h3>
     <small class="sec-note">別の端末やブラウザでログインするときに使います。他人に教えないでください。</small>
     <div class="manual-add flat">

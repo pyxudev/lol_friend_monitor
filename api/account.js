@@ -8,7 +8,6 @@
 const { handler, send, clientIp, HttpError } = require('../lib/http');
 const { redis } = require('../lib/redis');
 const users = require('../lib/users');
-const { riotAvailable } = require('../lib/riot');
 
 const MAX_CREATE_PER_HOUR = 10;
 
@@ -25,7 +24,7 @@ module.exports = handler({
   async GET(req, res) {
     const { uid } = await users.authenticate(req, 'user');
     const cfg = await users.loadCfg(uid);
-    send(res, 200, { uid, agentToken: cfg.agentToken, createdAt: cfg.createdAt, riotAvailable: riotAvailable() });
+    send(res, 200, { uid, agentToken: cfg.agentToken, createdAt: cfg.createdAt });
   },
 
   async DELETE(req, res) {

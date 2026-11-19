@@ -9,7 +9,7 @@
 const { handler, send, bearer, HttpError } = require('../lib/http');
 const { redis } = require('../lib/redis');
 const { loadAll } = require('../lib/state');
-const { runRiotCheck, riotAvailable } = require('../lib/riot');
+const { runRiotCheck } = require('../lib/riot');
 
 const BUDGET_MS = 50000;
 
@@ -17,7 +17,7 @@ module.exports = handler({
   async GET(req, res) {
     const secret = process.env.CRON_SECRET;
     if (!secret || bearer(req) !== secret) throw new HttpError(401, 'unauthorized');
-    if (!riotAvailable()) return send(res, 200, { ok: true, skipped: 'RIOT_API_KEY が未設定です' });
+    // API キーを登録していないユーザーは runRiotCheck が何もせずに返す
 
     const started = Date.now();
     const uids = await redis.cmd('SMEMBERS', 'users');

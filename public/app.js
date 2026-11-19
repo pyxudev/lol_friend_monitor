@@ -453,10 +453,13 @@ async function openSettings() {
   $('#set-webhook').placeholder = S.settings.discordWebhook ? '(設定済み — 変更する場合のみ入力)' : 'https://discord.com/api/webhooks/…';
   $('#set-riot').checked = S.settings.riotEnabled !== false;
   $('#set-platform').value = S.settings.riotPlatform || 'jp1';
-  $('#set-riot').disabled = !S.riot.available;
-  $('#riot-note').textContent = S.riot.available
-    ? '監視リストの Riot ID が試合を開始したら通知します（約 1 分間隔。ロビー・キュー中は検知できません）。ブラウザを閉じていても検知するには、運営者が /api/cron を定期実行する設定をしている必要があります。'
-    : 'このサーバーには Riot API キー（RIOT_API_KEY）が設定されていないため利用できません。';
+  $('#set-riotkey').value = '';
+  $('#set-riotkey').placeholder = S.settings.riotApiKey
+    ? `${S.settings.riotApiKey}（登録済み — 変更する場合のみ入力）`
+    : 'RGAPI-…';
+  $('#btn-clear-riotkey').hidden = !S.settings.riotApiKey;
+  $('#riot-note').textContent = '監視リストの Riot ID が試合を開始したら通知します（約 1 分間隔。ロビー・キュー中は検知できません）。'
+    + (S.settings.riotApiKey ? '' : '下の欄に Riot API キーを登録すると使えます。');
   $('#user-token').value = getToken();
   renderAgentCommands();
   el.dlg.showModal();
@@ -476,6 +479,17 @@ $('#btn-rotate-agent').onclick = async () => {
     renderAgentCommands();
     toast('エージェントトークンを再発行しました', null, 'info');
   } catch (e) { toast('再発行に失敗しました', e.message, 'err'); }
+};
+$('#btn-clear-riotkey').onclick = async () => {
+  if (!confirm('登録した Riot API キーを削除しますか？\nエージェント停止中の試合検知が止まります。')) return;
+  try {
+    const r = await api('/api/settings', { method: 'PUT', body: JSON.stringify({ riotApiKey: '' }) });
+    S.settings = r.settings;
+    $('#set-riotkey').placeholder = 'RGAPI-…';
+    $('#btn-clear-riotkey').hidden = true;
+    toast('Riot API キーを削除しました', null, 'info');
+    pollState();
+  } catch (e) { toast('削除に失敗しました', e.message, 'err'); }
 };
 $('#btn-logout').onclick = () => {
   if (!confirm('ログアウトしますか？\nユーザートークンを控えていないと、このアカウントに戻れなくなります。')) return;
@@ -500,14 +514,17 @@ el.dlg.addEventListener('close', async () => {
     notifyAwayAsOnline: $('#set-away').checked,
     soundEnabled: $('#set-sound').checked,
     riotPlatform: $('#set-platform').value,
+    riotEnabled: $('#set-riot').checked,
   };
-  if (!$('#set-riot').disabled) patch.riotEnabled = $('#set-riot').checked;
   const hook = $('#set-webhook').value.trim();
   if (hook) patch.discordWebhook = hook;
+  const riotKey = $('#set-riotkey').value.trim();
+  if (riotKey) patch.riotApiKey = riotKey;
   try {
     const r = await api('/api/settings', { method: 'PUT', body: JSON.stringify(patch) });
     S.settings = r.settings;
-    toast('設定を保存しました', null, 'info');
+    toast('設定を保存しました', riotKey ? 'Riot API キーを確認して登録しました' : null, 'info');
+    pollState();   // Riot API の利用可否などをすぐ反映する
   } catch (e) { toast('保存に失敗しました', e.message, 'err'); }
 });
 
