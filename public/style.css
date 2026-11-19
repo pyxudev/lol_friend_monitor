@@ -16,6 +16,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -227,3 +228,36 @@ dialog::backdrop { background: rgba(0, 0, 0, .6); }
   line-height: 1.5;
   color: #7b8aa3;
 }
+
+/* ---------- ログイン画面 ---------- */
+.onboard { display: grid; place-items: start center; padding: 48px 16px; }
+.onboard-card { width: min(520px, 100%); }
+.onboard-body { padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+.onboard-body h2 { margin: 0; font-size: 18px; }
+.onboard-body h3 { margin: 0; font-size: 14px; }
+.onboard-body p { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text-dim); }
+.onboard-body hr { border: none; border-top: 1px solid var(--line); margin: 8px 0; width: 100%; }
+.manual-add.flat { padding: 0; border-top: none; }
+
+/* ---------- 設定ダイアログの追加セクション ---------- */
+dialog { width: min(560px, 92vw); max-height: 90vh; }
+.dlg-sec { margin: 8px 0 -6px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 14px; }
+.sec-note { color: var(--text-dim); font-size: 11.5px; line-height: 1.6; }
+.sec-note code { background: var(--bg-2); padding: 1px 5px; border-radius: 4px; }
+.code {
+  margin: 0; padding: 10px 12px; border-radius: 8px;
+  background: var(--bg-2); border: 1px solid var(--line);
+  font-size: 11.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.field select {
+  font: inherit; font-size: 13px;
+  background: var(--bg-2); border: 1px solid var(--line); color: var(--text);
+  padding: 7px 11px; border-radius: 8px;
+}
+.btn-danger { background: transparent; border-color: #4a2b2b; color: #ffb4b4; }
+.btn-danger:hover { background: #2a1618; border-color: var(--red); }
+.conn-riot .dot { background: var(--blue); }
+.conn-riot { color: #9fc4ea; border-color: #2f4257; }
+.src-badge { font-size: 10px; padding: 1px 6px; margin-left: 6px; border-radius: 999px; background: #1d2b42; color: #9fc4ea; }

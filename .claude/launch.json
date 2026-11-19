@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "mock",
+      "name": "dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "mock"],
+      "runtimeArgs": ["run", "dev"],
       "port": 7320
     }
   ]
